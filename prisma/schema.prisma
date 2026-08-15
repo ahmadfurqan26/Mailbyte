@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+}
+
+model SmtpAccount {
+  id          String   @id @default(cuid())
+  name        String
+  host        String
+  port        Int
+  username    String
+  passwordEnc String
+  secure      Boolean  @default(false)
+  fromName    String?
+  fromEmail   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    EmailMessage[]
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String
+  html      String
+  text      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailMessage {
+  id          String      @id @default(cuid())
+  smtpId      String
+  smtp        SmtpAccount @relation(fields: [smtpId], references: [id], onDelete: Cascade)
+  to          String
+  cc          String?
+  bcc         String?
+  subject     String
+  html        String?
+  text        String?
+  status      EmailStatus @default(QUEUED)
+  error       String?
+  messageId   String?
+  attempts    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  sentAt      DateTime?
+}
