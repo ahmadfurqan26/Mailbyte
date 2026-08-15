@@ -1,54 +1,38 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createTransport } from "@/lib/mailer";
+import { encrypt } from "@/lib/crypto";
+import { verifySmtp } from "@/lib/mailer";
 
 const schema = z.object({
-  smtpId:z.string().min(1),
-  to:z.string().email(),
-  subject:z.string().min(1).max(998),
-  text:z.string().optional(),
-  html:z.string().optional()
+  name:z.string().min(1),
+  host:z.string().min(1),
+  port:z.number().int().min(1).max(65535),
+  username:z.string().min(1),
+  password:z.string().min(1),
+  secure:z.boolean().default(false),
+  fromName:z.string().optional(),
+  fromEmail:z.string().email()
 });
 
 export async function POST(req:Request) {
-  let messageId:string|undefined;
   try {
     const input = schema.parse(await req.json());
-    const account = await prisma.smtpAccount.findUnique({where:{id:input.smtpId}});
-    if (!account) return NextResponse.json({error:"SMTP account not found."},{status:404});
-
-    const message = await prisma.emailMessage.create({
+    const temp = {...input, passwordEnc:encrypt(input.password)};
+    await verifySmtp({
+      host:temp.host, port:temp.port, username:temp.username,
+      passwordEnc:temp.passwordEnc, secure:temp.secure
+    });
+    const account = await prisma.smtpAccount.create({
       data:{
-        smtpId:account.id, to:input.to, subject:input.subject,
-        text:input.text || null, html:input.html || null,
-        status:"SENDING", attempts:1
-      }
+        name:input.name, host:input.host, port:input.port,
+        username:input.username, passwordEnc:temp.passwordEnc,
+        secure:input.secure, fromName:input.fromName, fromEmail:input.fromEmail
+      },
+      select:{id:true,name:true,host:true,port:true,fromEmail:true}
     });
-    messageId = message.id;
-
-    const transport = await createTransport(account);
-    const info = await transport.sendMail({
-      from: account.fromName ? `"${account.fromName}" <${account.fromEmail}>` : account.fromEmail,
-      to: input.to,
-      subject: input.subject,
-      text: input.text || undefined,
-      html: input.html || undefined
-    });
-    transport.close();
-
-    await prisma.emailMessage.update({
-      where:{id:message.id},
-      data:{status:"SENT",sentAt:new Date(),messageId:info.messageId}
-    });
-    return NextResponse.json({id:message.id,status:"SENT"});
+    return NextResponse.json(account);
   } catch (e:any) {
-    if (messageId) {
-      await prisma.emailMessage.update({
-        where:{id:messageId},
-        data:{status:"FAILED",error:String(e?.message || e)}
-      }).catch(()=>{});
-    }
-    return NextResponse.json({error:e?.message || "Email sending failed."},{status:400});
+    return NextResponse.json({error:e?.message || "SMTP configuration failed."},{status:400});
   }
 }
