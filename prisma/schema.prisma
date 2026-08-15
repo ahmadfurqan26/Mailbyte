@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("postgresql://smtp_user:e7sMJOPE9jJRDYcjA6LareEO1dseT8Hu@dpg-d9vst8lbedkc739c4edg-a/smtp_app")
 }
 
 enum EmailStatus {
